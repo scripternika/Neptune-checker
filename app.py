@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# NEPTUN FULL CAPTURE WEB - PROXY İNDİRME + THREAD 50
+# NEPTUN FULL CAPTURE WEB - SADECE BAŞLAT'TA META REFRESH
 import os, json, base64, time, random, secrets, threading
 from datetime import datetime
 from flask import Flask, request, render_template_string, jsonify, session, redirect, url_for, send_file
@@ -25,6 +25,7 @@ CHECKER_RESULT_FILE = 'checker_result.txt'
 CHECKER_PROGRESS_FILE = 'checker_progress.json'
 PROXY_RESULT_FILE = 'proxy_result.txt'
 LIVE_PROXY_FILE = 'live_proxies.txt'
+KEY_IP_FILE = 'key_ip.json'
 
 def load_hits():
     try:
@@ -61,6 +62,24 @@ def load_keys():
 def save_keys(keys):
     with open(KEYS_FILE, 'w') as f:
         json.dump(keys, f)
+
+def load_key_ip():
+    try:
+        if os.path.exists(KEY_IP_FILE):
+            with open(KEY_IP_FILE, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
+def save_key_ip(data):
+    with open(KEY_IP_FILE, 'w') as f:
+        json.dump(data, f)
+
+def get_client_ip():
+    if request.headers.get('X-Forwarded-For'):
+        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    return request.remote_addr
 
 def load_checker_result():
     try:
@@ -334,7 +353,7 @@ def run_checker_thread(combo_list, thread_count, webhook, proxy_input):
     save_checker_progress({'done': 0, 'total': total, 'hit': 0, 'twofa': 0, 'bad': 0})
     
     import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(thread_count, 20)) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(thread_count, 50)) as executor:
         futures = {}
         for u, p in combo_list:
             if checker_stop:
@@ -413,11 +432,10 @@ def run_proxy_scrape_check_thread():
     results = []
     live_list = []
     
-    save_proxy_result(f"🚀 {total} proxy kontrol ediliyor... (Thread: 50)\n\n")
+    save_proxy_result(f"🚀 {total} proxy kontrol ediliyor... (Thread: 200)\n\n")
     
     import concurrent.futures
-    # Thread sayısını 50'ye çıkar
-    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=200) as executor:
         futures = {executor.submit(check_proxy, p): p for p in proxies}
         for future in concurrent.futures.as_completed(futures):
             if proxy_stop:
@@ -436,11 +454,9 @@ def run_proxy_scrape_check_thread():
                 dead += 1
                 results.append(f"❌ ÖLÜ | {p}")
             
-            # Her 20 proxy'de bir kaydet
             if done % 20 == 0 or done == total:
                 save_proxy_result(f"📊 İlerleme: {done}/{total} | Canlı: {alive} | Ölü: {dead}\n\n" + "\n".join(results[-50:]))
     
-    # Live proxy'leri kaydet
     live_proxies = live_list
     save_live_proxies(live_list)
     
@@ -456,7 +472,9 @@ HTML = '''
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Neptun Full Capture</title>
+    {% if auto_refresh %}
     <meta http-equiv="refresh" content="3">
+    {% endif %}
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { background:#0a0a0a; color:#00ffcc; font-family:'Segoe UI',sans-serif; display:flex; min-height:100vh; }
@@ -526,6 +544,9 @@ HTML = '''
         .hit-count-badge { background:#44ff44; color:#0a0a0a; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:bold; }
         .download-btn { background:#4488ff; color:#fff; padding:5px 14px; border-radius:4px; border:none; cursor:pointer; font-weight:600; font-size:12px; text-decoration:none; display:inline-block; }
         .download-btn:hover { opacity:0.8; }
+        .live-badge { background:#ff4444; color:#fff; padding:2px 8px; border-radius:10px; font-size:9px; margin-left:5px; animation: blink 1s infinite; }
+        @keyframes blink { 0%{opacity:1} 50%{opacity:0.3} 100%{opacity:1} }
+        .refresh-badge { background:#ffcc00; color:#0a0a0a; padding:2px 8px; border-radius:10px; font-size:9px; margin-left:5px; animation: blink 1s infinite; }
         @media (max-width:700px) { .sidebar { width:50px; } .sidebar .logo h1, .sidebar .logo span, .sidebar .menu-item span:not(.icon) { display:none; } .sidebar .menu-item { padding:10px 14px; } .main { margin-left:50px; padding:15px; } .header { flex-direction:column; align-items:stretch; } .stats { justify-content:space-around; } .form-row { flex-direction:column; } .login-box { width:90%; padding:20px; } }
     </style>
 </head>
@@ -549,9 +570,9 @@ HTML = '''
     <div class="logo"><h1>NEPTUN</h1><span>Full Capture</span></div>
     <div class="menu-section">Menü</div>
     <a href="/page/dashboard" class="menu-item {{ 'active' if page == 'dashboard' else '' }}"><span class="icon">📊</span> Dashboard</a>
-    <a href="/page/checker" class="menu-item {{ 'active' if page == 'checker' else '' }}"><span class="icon">🎮</span> Checker</a>
+    <a href="/page/checker" class="menu-item {{ 'active' if page == 'checker' else '' }}"><span class="icon">🎮</span> Checker {% if auto_refresh and page == 'checker' %}<span class="refresh-badge">REFRESH</span>{% endif %}</a>
     <div class="menu-section">Araçlar</div>
-    <a href="/page/proxy_scraper" class="menu-item {{ 'active' if page == 'proxy_scraper' else '' }}"><span class="icon">🌐</span> Proxy Scraper</a>
+    <a href="/page/proxy_scraper" class="menu-item {{ 'active' if page == 'proxy_scraper' else '' }}"><span class="icon">🌐</span> Proxy Scraper {% if auto_refresh and page == 'proxy_scraper' %}<span class="refresh-badge">REFRESH</span>{% endif %}</a>
     <a href="/page/proxy_checker" class="menu-item {{ 'active' if page == 'proxy_checker' else '' }}"><span class="icon">✅</span> Proxy Checker</a>
     <a href="/page/webhook" class="menu-item {{ 'active' if page == 'webhook' else '' }}"><span class="icon">🔗</span> Webhook</a>
     <a href="/page/settings" class="menu-item {{ 'active' if page == 'settings' else '' }}"><span class="icon">⚙️</span> Ayarlar</a>
@@ -626,6 +647,7 @@ HTML = '''
                 <div style="color:#666;font-size:12px;margin-top:6px;">
                     Combo: {{ progress.total }} | İlerleme: {{ progress.done }}/{{ progress.total }}
                     | HIT: {{ progress.hit }} | 2FA: {{ progress.twofa }} | BAD: {{ progress.bad }}
+                    {% if auto_refresh and page == 'checker' %}<span class="refresh-badge">🔄 CANLI</span>{% endif %}
                 </div>
                 <div class="progress-bar">
                     <div class="fill" style="width:{{ progress_pct }}%;"></div>
@@ -644,7 +666,7 @@ HTML = '''
                 <form method="POST" action="/action/proxy_scrape">
                     <div class="flex">
                         <button type="submit" class="btn btn-primary" name="action" value="scrape">🔍 Sadece Topla</button>
-                        <button type="submit" class="btn btn-warning" name="action" value="scrape_check">🚀 Çek ve Kontrol Et (Thread: 50)</button>
+                        <button type="submit" class="btn btn-warning" name="action" value="scrape_check">🚀 Çek ve Kontrol Et (Thread: 200)</button>
                         <button type="submit" class="btn btn-outline" name="action" value="list">📋 Listele</button>
                         <button type="submit" class="btn btn-danger" name="action" value="clear">🗑️ Temizle</button>
                     </div>
@@ -654,6 +676,7 @@ HTML = '''
                     {% if live_count > 0 %}
                     | <a href="/download/live_proxies" class="download-btn">⬇️ Canlı Proxy İndir ({{ live_count }})</a>
                     {% endif %}
+                    {% if auto_refresh and page == 'proxy_scraper' %}<span class="refresh-badge">🔄 CANLI</span>{% endif %}
                 </div>
             </div>
             <div class="card">
@@ -739,10 +762,15 @@ HTML = '''
                 {% endif %}
                 <div class="table-wrap" style="margin-top:10px;">
                     <table>
-                        <thead><tr><th>Anahtar</th><th>Plan</th><th>Durum</th><th>Kullanıcı</th></tr></thead>
+                        <thead><tr><th>Anahtar</th><th>Plan</th><th>Durum</th><th>IP</th></tr></thead>
                         <tbody>
                             {% for k, v in keys.items() %}
-                            <tr><td style="font-size:10px;">{{ k }}</td><td>{{ v.plan }}</td><td><span class="status-badge {{ 'status-hit' if not v.used else 'status-bad' }}">{{ 'Kullanılmadı' if not v.used else 'Kullanıldı' }}</span></td><td>{{ v.used_by or '—' }}</td></tr>
+                            <tr>
+                                <td style="font-size:10px;">{{ k }}</td>
+                                <td>{{ v.plan }}</td>
+                                <td><span class="status-badge {{ 'status-hit' if not v.used else 'status-bad' }}">{{ 'Kullanılmadı' if not v.used else 'Kullanıldı' }}</span></td>
+                                <td>{{ v.used_ip or '—' }}</td>
+                            </tr>
                             {% else %}
                             <tr><td colspan="4" style="color:#666;text-align:center;">Hiç anahtar yok</td></tr>
                             {% endfor %}
@@ -790,6 +818,11 @@ def page(page):
     proxy_check_result = session.pop('proxy_check_result', '⏳ Bekleniyor...')
     proxy_check_status = session.pop('proxy_check_status', '0 proxy yüklendi')
     
+    # Auto refresh kontrolü - sadece checker veya proxy_scraper sayfasında ve session'da refresh flag varsa
+    auto_refresh = False
+    if page in ['checker', 'proxy_scraper']:
+        auto_refresh = session.get('auto_refresh', False)
+    
     return render_template_string(
         HTML,
         session=session,
@@ -805,6 +838,7 @@ def page(page):
         live_count=live_count,
         proxy_check_result=proxy_check_result,
         proxy_check_status=proxy_check_status,
+        auto_refresh=auto_refresh,
         webhook_msg=session.pop('webhook_msg', None),
         webhook_ok=session.pop('webhook_ok', False),
         settings_msg=session.pop('settings_msg', None),
@@ -814,19 +848,59 @@ def page(page):
 @app.route('/login', methods=['POST'])
 def login():
     key = request.form.get('key', '').strip()
+    client_ip = get_client_ip()
+    
+    key_ip_data = load_key_ip()
+    
     if key == MASTER_KEY:
         session['authenticated'] = True
         session['is_admin'] = True
+        session['auto_refresh'] = False
         return redirect(url_for('page', page='dashboard'))
-    else:
+    
+    keys = load_keys()
+    if key not in keys:
         return render_template_string(
             HTML,
-            error='Geçersiz anahtar!',
+            error='❌ Geçersiz anahtar!',
             session=session,
             hits=load_hits(),
             keys=load_keys(),
-            page='dashboard'
+            page='dashboard',
+            auto_refresh=False
         )
+    
+    key_info = keys[key]
+    
+    if key_info.get('used', False):
+        if key_info.get('used_ip') == client_ip:
+            session['authenticated'] = True
+            session['is_admin'] = False
+            session['auto_refresh'] = False
+            return redirect(url_for('page', page='dashboard'))
+        else:
+            return render_template_string(
+                HTML,
+                error=f'❌ Bu anahtar zaten başka bir IP tarafından kullanılıyor! (IP: {key_info.get("used_ip", "Bilinmiyor")})',
+                session=session,
+                hits=load_hits(),
+                keys=load_keys(),
+                page='dashboard',
+                auto_refresh=False
+            )
+    
+    keys[key]['used'] = True
+    keys[key]['used_ip'] = client_ip
+    keys[key]['used_at'] = datetime.utcnow().isoformat()
+    save_keys(keys)
+    
+    key_ip_data[key] = client_ip
+    save_key_ip(key_ip_data)
+    
+    session['authenticated'] = True
+    session['is_admin'] = False
+    session['auto_refresh'] = False
+    return redirect(url_for('page', page='dashboard'))
 
 @app.route('/logout')
 def logout():
@@ -839,7 +913,6 @@ def download_live_proxies():
     live_proxies = load_live_proxies()
     if not live_proxies:
         return "❌ Canlı proxy bulunamadı.", 404
-    # Geçici dosya oluştur
     temp_file = 'live_proxies_download.txt'
     with open(temp_file, 'w', encoding='utf-8') as f:
         f.write('\n'.join(live_proxies))
@@ -870,16 +943,21 @@ def action_checker():
         save_checker_result(f"🚀 Başlatıldı! {len(combo_list)} combo kontrol edilecek.\n\n")
         save_checker_progress({'done': 0, 'total': len(combo_list), 'hit': 0, 'twofa': 0, 'bad': 0})
         
+        # AUTO REFRESH AÇ
+        session['auto_refresh'] = True
+        
         if not checker_running:
             threading.Thread(target=run_checker_thread, args=(combo_list, thread, webhook, proxy)).start()
     
     elif action == 'stop':
         checker_stop = True
         save_checker_result('⏹ Durduruldu.')
+        session['auto_refresh'] = False
     
     elif action == 'clear':
         save_checker_result('⏳ Bekleniyor...')
         save_checker_progress({'done': 0, 'total': 0, 'hit': 0, 'twofa': 0, 'bad': 0})
+        session['auto_refresh'] = False
     
     return redirect(request.referrer or url_for('page', page='checker'))
 
@@ -891,13 +969,16 @@ def action_proxy():
     if action == 'scrape':
         proxies = scrape_proxies()
         save_proxy_result(f'✅ {len(proxies)} proxy toplandı.\n\n' + '\n'.join(proxies[:30]))
+        session['auto_refresh'] = False
     
     elif action == 'scrape_check':
         if not proxy_running:
-            save_proxy_result("⏳ Proxy toplanıyor ve kontrol ediliyor... (Thread: 50)\n")
+            save_proxy_result("⏳ Proxy toplanıyor ve kontrol ediliyor... (Thread: 200)\n")
+            session['auto_refresh'] = True
             threading.Thread(target=run_proxy_scrape_check_thread).start()
         else:
             save_proxy_result("⏳ Zaten çalışıyor...")
+            session['auto_refresh'] = True
     
     elif action == 'list':
         proxies = load_proxies()
@@ -905,11 +986,13 @@ def action_proxy():
             save_proxy_result(f'📋 {len(proxies)} proxy:\n\n' + '\n'.join(proxies[:50]))
         else:
             save_proxy_result('❌ Proxy bulunamadı.')
+        session['auto_refresh'] = False
     
     elif action == 'clear':
         save_proxies([])
         save_live_proxies([])
         save_proxy_result('🗑️ Proxy\'ler temizlendi.')
+        session['auto_refresh'] = False
     
     return redirect(request.referrer or url_for('page', page='proxy_scraper'))
 
@@ -985,7 +1068,7 @@ def action_key_gen():
     raw = secrets.token_hex(12)
     key = f"NEPTUN-{plan.upper()}-{raw.upper()}"
     keys = load_keys()
-    keys[key] = {'plan': plan, 'created': datetime.utcnow().isoformat(), 'used': False, 'used_by': None}
+    keys[key] = {'plan': plan, 'created': datetime.utcnow().isoformat(), 'used': False, 'used_ip': None}
     save_keys(keys)
     session['key_result'] = f'🔑 {key} ({plan})'
     return redirect(request.referrer or url_for('page', page='key_gen'))
